@@ -1,127 +1,129 @@
+// 界面模块 · 外壳：页头指标、三个视图切换
+import { useMemo, useState } from "react";
 import "./styles.css";
+import { ArchiveProvider, useArchive } from "./data/store";
+import { ProgressBoard } from "./ui/ProgressBoard";
+import { DeviationTable } from "./ui/DeviationTable";
+import { MaintenanceReports } from "./ui/MaintenanceReports";
 
-const project = {
-  "sourceNo": 7,
-  "id": "hxyfront-62005",
-  "port": 62005,
-  "title": "管风琴音管调音记录",
-  "domain": "管风琴维护",
-  "prompt": "做一个给管风琴维护人员使用的音管调音记录前端项目，可以记录教堂或音乐厅名称、音栓、音管编号、音高、音分偏差、温湿度、簧片状态和维修备注。页面需要有音栓列表、调音偏差表、温湿度记录、异常音管标记和单次维护报告页。",
-  "palette": [
-    "#854d0e",
-    "#475569",
-    "#0ea5e9"
-  ],
-  "metrics": [
-    "音栓数量",
-    "偏差超限",
-    "温度",
-    "湿度"
-  ],
-  "filters": [
-    "主音栓",
-    "簧片音栓",
-    "混合音栓",
-    "低音管"
-  ],
-  "fields": [
-    "场馆名称",
-    "音栓",
-    "音管编号",
-    "音高",
-    "音分偏差",
-    "维修备注"
-  ],
-  "records": [
-    [
-      "St.Mary",
-      "Trumpet 8'",
-      "C#4 +9cent",
-      "簧片需微调"
-    ],
-    [
-      "ConcertHall A",
-      "Principal 4'",
-      "G3 -3cent",
-      "正常"
-    ],
-    [
-      "Abbey Room",
-      "Bourdon 16'",
-      "F2 -12cent",
-      "标记复检"
-    ]
-  ]
-};
+type Tab = "progress" | "deviation" | "reports";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "progress", label: "音栓进度" },
+  { key: "deviation", label: "偏差表" },
+  { key: "reports", label: "维护报告" },
+];
+
+function Console() {
+  const { archive, judge, reset } = useArchive();
+  const [tab, setTab] = useState<Tab>("progress");
+  const [selectedStop, setSelectedStop] = useState(
+    archive.stops[2]?.id ?? archive.stops[0]?.id ?? ""
+  );
+
+  const metrics = useMemo(() => {
+    const judgements = archive.stops.map((stop) => judge(stop.id));
+    const tuned = judgements.filter((j) => j.state === "tuned").length;
+    const outliers = judgements.reduce(
+      (sum, j) => sum + j.outlierIds.length,
+      0
+    );
+    const venues = new Set(archive.stops.map((stop) => stop.venueId)).size;
+    return {
+      venues,
+      stops: archive.stops.length,
+      pipes: archive.pipes.length,
+      tuned,
+      outliers,
+      reports: archive.reports.length,
+    };
+  }, [archive, judge]);
+
+  const handleReset = () => {
+    if (window.confirm("将清空当前浏览器存档并恢复两场馆三音栓九支管的预置数据，确定？")) {
+      reset();
+      setTab("progress");
+      setSelectedStop("s3");
+    }
+  };
+
+  const pickStop = (stopId: string) => {
+    setSelectedStop(stopId);
+    setTab("deviation");
+  };
+
+  return (
+    <main className="app">
+      <header className="hero">
+        <div className="hero-row">
+          <p>hxyfront-62005 · 管风琴维护 · Port 62005</p>
+          <button className="ghost-btn" onClick={handleReset}>
+            恢复预置数据
+          </button>
+        </div>
+        <h1>音栓组校音台</h1>
+        <span>
+          按音栓计算全组平均偏差：单管偏离均值超过 ±3 音分即判离群，整组回到待校。
+          重测任一音管后按最新均值重算该组，原本通过的音管若被动离群只退回待校，历史结论全程保留。
+        </span>
+      </header>
+
+      <section className="metrics">
+        <article>
+          <small>场馆 / 音栓</small>
+          <strong>
+            {metrics.venues} / {metrics.stops}
+          </strong>
+        </article>
+        <article>
+          <small>受管音管</small>
+          <strong>{metrics.pipes}</strong>
+        </article>
+        <article>
+          <small>已校音栓</small>
+          <strong className={metrics.tuned === metrics.stops ? "metric-good" : ""}>
+            {metrics.tuned}/{metrics.stops}
+          </strong>
+        </article>
+        <article>
+          <small>离群音管</small>
+          <strong className={metrics.outliers > 0 ? "metric-bad" : "metric-good"}>
+            {metrics.outliers}
+          </strong>
+        </article>
+      </section>
+
+      <nav className="tabs">
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            className={tab === item.key ? "tab active" : "tab"}
+            onClick={() => setTab(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "progress" && <ProgressBoard onPickStop={pickStop} />}
+      {tab === "deviation" && (
+        <DeviationTable stopId={selectedStop} onChangeStop={setSelectedStop} />
+      )}
+      {tab === "reports" && <MaintenanceReports />}
+
+      <footer className="footer">
+        偏差表、音栓进度与单次维护报告共用浏览器 localStorage 存档 ·
+        判定规则（domain）、存档数据（data）、页面（ui）分为三个业务模块
+      </footer>
+    </main>
+  );
+}
 
 function App() {
   return (
-    <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
-
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
-          </article>
-        ))}
-      </section>
-
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+    <ArchiveProvider>
+      <Console />
+    </ArchiveProvider>
   );
 }
 
