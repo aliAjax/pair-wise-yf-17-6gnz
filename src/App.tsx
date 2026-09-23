@@ -1,128 +1,133 @@
+import { useState } from "react";
 import "./styles.css";
+import { Pipe } from "./domain/types";
+import { OUTLIER_LIMIT } from "./domain/types";
+import { useArchive } from "./ui/useArchive";
+import { StopPanel } from "./ui/StopPanel";
+import { ReportsView } from "./ui/ReportsView";
+import { RetestDialog } from "./ui/RetestDialog";
+import { fmtTime } from "./ui/format";
 
-const project = {
-  "sourceNo": 7,
-  "id": "hxyfront-62005",
-  "port": 62005,
-  "title": "管风琴音管调音记录",
-  "domain": "管风琴维护",
-  "prompt": "做一个给管风琴维护人员使用的音管调音记录前端项目，可以记录教堂或音乐厅名称、音栓、音管编号、音高、音分偏差、温湿度、簧片状态和维修备注。页面需要有音栓列表、调音偏差表、温湿度记录、异常音管标记和单次维护报告页。",
-  "palette": [
-    "#854d0e",
-    "#475569",
-    "#0ea5e9"
-  ],
-  "metrics": [
-    "音栓数量",
-    "偏差超限",
-    "温度",
-    "湿度"
-  ],
-  "filters": [
-    "主音栓",
-    "簧片音栓",
-    "混合音栓",
-    "低音管"
-  ],
-  "fields": [
-    "场馆名称",
-    "音栓",
-    "音管编号",
-    "音高",
-    "音分偏差",
-    "维修备注"
-  ],
-  "records": [
-    [
-      "St.Mary",
-      "Trumpet 8'",
-      "C#4 +9cent",
-      "簧片需微调"
-    ],
-    [
-      "ConcertHall A",
-      "Principal 4'",
-      "G3 -3cent",
-      "正常"
-    ],
-    [
-      "Abbey Room",
-      "Bourdon 16'",
-      "F2 -12cent",
-      "标记复检"
-    ]
-  ]
-};
+type Tab = "console" | "reports";
 
-function App() {
+export default function App() {
+  const { archive, retest, reset, getPipe, stats } = useArchive();
+  const [tab, setTab] = useState<Tab>("console");
+  const [targetPipeId, setTargetPipeId] = useState<string | null>(null);
+
+  const target = targetPipeId ? getPipe(targetPipeId) : null;
+
+  function handleReset() {
+    if (window.confirm("确定恢复预置数据？当前浏览器存档（含全部重测与报告）将被清空。")) {
+      reset();
+      setTab("console");
+      setTargetPipeId(null);
+    }
+  }
+
   return (
     <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">管风琴维护 · 音栓组校音台</p>
+          <h1>音栓组校音台</h1>
+          <p className="rule-line">
+            按音栓计算全组平均偏差；单管偏离均值超过 ±{OUTLIER_LIMIT}
+            音分即判离群、整组回到待校。重测任一音管后按最新均值重算该组，曾通过的音管只退回待校、历史结论保留。
+          </p>
+        </div>
+        <div className="archive-box">
+          <span className="archive-dot" title="已保存在浏览器本地" />
+          <div>
+            <small>浏览器存档</small>
+            <strong>{fmtTime(archive.updatedAt)}</strong>
+          </div>
+          <button className="ghost-btn" onClick={handleReset}>
+            恢复预置
+          </button>
+        </div>
+      </header>
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
-          </article>
-        ))}
+        <article>
+          <small>场馆 / 音栓</small>
+          <strong>
+            {archive.venues.length} / {stats.stops}
+          </strong>
+        </article>
+        <article>
+          <small>音管总数</small>
+          <strong>{stats.pipes}</strong>
+        </article>
+        <article>
+          <small>整组已校 / 待校</small>
+          <strong>
+            {stats.stopsPassed} / {stats.pendingStops}
+          </strong>
+        </article>
+        <article>
+          <small>当前离群音管</small>
+          <strong className={stats.outliers > 0 ? "text-danger" : "text-ok"}>
+            {stats.outliers}
+          </strong>
+        </article>
       </section>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
+      <nav className="tabs">
+        <button
+          className={tab === "console" ? "active" : ""}
+          onClick={() => setTab("console")}
+        >
+          校音台（偏差表 · 音栓进度）
+        </button>
+        <button
+          className={tab === "reports" ? "active" : ""}
+          onClick={() => setTab("reports")}
+        >
+          单次维护报告
+          {stats.reports > 0 && <span className="tab-count">{stats.reports}</span>}
+        </button>
+      </nav>
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
+      {tab === "console" &&
+        archive.venues.map((venue) => (
+          <section key={venue.id} className="venue-block">
+            <header className="venue-head">
+              <h2>{venue.name}</h2>
+              <span className="venue-kind">{venue.kind}</span>
+              <span className="venue-count">{venue.stops.length} 个音栓</span>
+            </header>
+            <div className="stop-list">
+              {venue.stops.map((s) => (
+                <StopPanel
+                  key={s.id}
+                  stop={s}
+                  onRetest={(p: Pipe) => setTargetPipeId(p.id)}
+                />
+              ))}
             </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+          </section>
+        ))}
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      {tab === "reports" && <ReportsView reports={archive.reports} />}
+
+      {target && (
+        <RetestDialog
+          pipe={target.pipe}
+          stopName={target.stop.name}
+          venueName={target.venue.name}
+          onCancel={() => setTargetPipeId(null)}
+          onSubmit={(payload) => {
+            retest(target.pipe.id, payload);
+            setTargetPipeId(null);
+          }}
+        />
+      )}
+
+      <footer className="page-foot">
+        偏差表、音栓进度与单次维护报告共用同一份浏览器存档（localStorage：
+        <code>organ-tuning-console:v1</code>）。
+      </footer>
     </main>
   );
 }
-
-export default App;
